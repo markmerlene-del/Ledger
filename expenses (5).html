@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Ledger</title>
+
+<!-- ── PWA / iPhone home screen meta ───────────────────────────────── -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Ledger">
+<meta name="theme-color" content="#0f0e0c">
+
+<!-- Inline app icon as base64 PNG (180x180 gold "L" on dark background) -->
+<script>
+// Generate icon via canvas and inject as apple-touch-icon
+(function(){
+  try {
+    const c = document.createElement('canvas');
+    c.width = c.height = 180;
+    const ctx = c.getContext('2d');
+    // Background
+    ctx.fillStyle = '#0f0e0c';
+    ctx.fillRect(0,0,180,180);
+    // Rounded rect clip
+    const r = 38;
+    ctx.beginPath();
+    ctx.moveTo(r,0); ctx.lineTo(180-r,0);
+    ctx.quadraticCurveTo(180,0,180,r);
+    ctx.lineTo(180,180-r); ctx.quadraticCurveTo(180,180,180-r,180);
+    ctx.lineTo(r,180); ctx.quadraticCurveTo(0,180,0,180-r);
+    ctx.lineTo(0,r); ctx.quadraticCurveTo(0,0,r,0);
+    ctx.closePath();
+    ctx.fillStyle = '#1a1814'; ctx.fill();
+    // Gold accent bar top
+    ctx.fillStyle = '#e8c97a';
+    ctx.fillRect(0,0,180,5);
+    // "L" letter
+    ctx.fillStyle = '#e8c97a';
+    ctx.font = 'bold 108px Georgia, serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('L', 90, 94);
+    // Small "EDGER" subtitle
+    ctx.fillStyle = '#7a7060';
+    ctx.font = '600 18px monospace';
+    ctx.fillText('EDGER', 110, 138);
+    const link = document.createElement('link');
+    link.rel = 'apple-touch-icon';
+    link.href = c.toDataURL('image/png');
+    document.head.appendChild(link);
+    // Also set favicon
+    const fav = document.createElement('link');
+    fav.rel = 'icon'; fav.type = 'image/png';
+    fav.href = c.toDataURL('image/png');
+    document.head.appendChild(fav);
+  } catch(e){}
+})();
+</script>
+
+<!-- Inline splash screen style for iPhone (shown while loading) -->
+<style>
+  #splash {
+    position: fixed; inset: 0; z-index: 9999;
+    background: #0f0e0c;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; transition: opacity 0.4s ease;
+  }
+  #splash.hide { opacity: 0; pointer-events: none; }
+  #splash .splash-logo { font-family: Georgia, serif; font-size: 52px; color: #e8c97a; letter-spacing: -1px; }
+  #splash .splash-sub { font-family: monospace; font-size: 13px; color: #7a7060; letter-spacing: 3px; text-transform: uppercase; }
+  #splash .splash-bar { width: 48px; height: 2px; background: #e8c97a; margin-top: 8px; animation: grow 0.8s ease forwards; transform-origin: left; transform: scaleX(0); }
+  @keyframes grow { to { transform: scaleX(1); } }
+</style>
+
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+
+<style>
+  :root {
+    --bg: #0f0e0c;
+    --surface: #1a1814;
+    --border: #2e2b24;
+    --accent: #e8c97a;
+    --accent2: #c97a7a;
+    --text: #f0ebe0;
+    --muted: #7a7060;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'DM Mono', monospace;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    padding-top: var(--safe-top); padding-bottom: var(--safe-bottom);
+  }
+  .noise {
+    position: fixed; inset: 0; pointer-events: none; z-index: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    opacity: 0.4;
+  }
+  .app { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 28px 16px 40px; }
+
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 12px; }
+  .logo { font-family: 'Playfair Display', serif; font-size: 24px; color: var(--accent); }
+
+  .month-nav { display: flex; align-items: center; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .nav-btn {
+    background: none; border: none; color: var(--muted); cursor: pointer;
+    font-size: 20px; padding: 8px 14px; line-height: 1;
+    border-right: 1px solid var(--border); transition: all 0.15s;
+  }
+  .nav-btn:last-child { border-right: none; border-left: 1px solid var(--border); }
+  .nav-btn:active { background: rgba(232,201,122,0.1); color: var(--accent); }
+  .nav-btn:disabled { opacity: 0.2; }
+  .month-display { padding: 8px 14px; font-size: 13px; min-width: 140px; text-align: center; }
+  .month-display.is-past { color: var(--muted); }
+  .month-display.is-current { color: var(--accent); }
+
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .month-total-wrap { text-align: right; }
+  .month-total-wrap .label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .month-total-wrap .amount { font-size: 26px; color: var(--accent); font-family: 'Playfair Display', serif; }
+
+  /* offline badge */
+  .offline-badge {
+    display: none; position: fixed; bottom: calc(16px + var(--safe-bottom)); left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+    padding: 6px 14px; font-size: 11px; color: var(--muted); z-index: 100;
+  }
+  .offline-badge.show { display: block; }
+
+  .past-banner {
+    display: none; align-items: center; justify-content: space-between;
+    background: rgba(232,201,122,0.05); border: 1px solid rgba(232,201,122,0.18);
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 16px; font-size: 12px; color: var(--accent);
+    gap: 10px; flex-wrap: wrap;
+  }
+  .past-banner.visible { display: flex; }
+  .btn-go-current {
+    background: none; border: 1px solid rgba(232,201,122,0.35); color: var(--accent);
+    font-family: 'DM Mono', monospace; font-size: 11px; padding: 5px 10px;
+    border-radius: 4px; cursor: pointer;
+  }
+
+  .layout { display: grid; grid-template-columns: 1fr 300px; gap: 18px; }
+
+  .add-form { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+  .add-form.hidden { display: none; }
+  .form-title { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+  .form-row-3 { display: grid; grid-template-columns: 1fr 120px 95px; gap: 8px; margin-bottom: 8px; }
+  .form-row { display: grid; grid-template-columns: 1fr 100px; gap: 8px; }
+  input, select {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    font-family: 'DM Mono', monospace; font-size: 14px;
+    padding: 10px 11px; border-radius: 4px; width: 100%;
+    -webkit-appearance: none; appearance: none;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  input::placeholder { color: var(--muted); }
+  select option { background: var(--surface); }
+  .btn-add {
+    background: var(--accent); color: var(--bg); border: none;
+    font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500;
+    padding: 10px 14px; border-radius: 4px; cursor: pointer;
+  }
+  .btn-add:active { opacity: 0.8; }
+
+  .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .table-header { display: grid; grid-template-columns: 76px 1fr 106px 84px 30px; padding: 8px 14px; border-bottom: 1px solid var(--border); }
+  .th { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+  .expense-row {
+    display: grid; grid-template-columns: 76px 1fr 106px 84px 30px;
+    padding: 11px 14px; border-bottom: 1px solid var(--border);
+    align-items: center; animation: slideIn 0.25s ease;
+  }
+  .expense-row:last-child { border-bottom: none; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(-5px); } to { opacity: 1; transform: translateY(0); } }
+  .cell-date { font-size: 12px; color: var(--muted); }
+  .cell-desc { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cell-cat { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); }
+  .cat-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .cell-amount { font-size: 13px; text-align: right; color: var(--accent2); }
+  .btn-del { background: none; border: none; color: var(--border); cursor: pointer; font-size: 16px; text-align: center; padding: 4px; }
+  .btn-del:active { color: var(--accent2); }
+  .empty { padding: 36px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.9; }
+
+  .summary { display: flex; flex-direction: column; gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card-title { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 12px; }
+  .cat-group { margin-bottom: 10px; }
+  .cat-group:last-child { margin-bottom: 0; }
+  .cat-row { display: flex; justify-content: space-between; align-items: center; }
+  .cat-label { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+  .cat-amount { font-size: 12px; }
+  .bar-bg { height: 2px; background: var(--border); border-radius: 2px; margin-top: 5px; }
+  .bar-fill { height: 2px; border-radius: 2px; transition: width 0.5s ease; }
+  .stat-row { display: flex; justify-content: space-between; font-size: 12px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-key { color: var(--muted); }
+  .hist-row { display: flex; justify-content: space-between; font-size: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .hist-row:last-child { border-bottom: none; }
+  .hist-row:active, .hist-row.active { color: var(--accent); }
+  .btn-export {
+    width: 100%; background: transparent; border: 1px solid var(--border);
+    color: var(--muted); font-family: 'DM Mono', monospace; font-size: 12px;
+    padding: 9px; border-radius: 4px; cursor: pointer; text-align: center;
+  }
+  .btn-export:active { border-color: var(--accent); color: var(--accent); }
+
+  /* install hint banner */
+  .install-hint {
+    display: none; align-items: center; gap: 10px; justify-content: center;
+    background: rgba(232,201,122,0.07); border: 1px dashed rgba(232,201,122,0.25);
+    border-radius: 6px; padding: 10px 14px; margin-bottom: 16px;
+    font-size: 12px; color: var(--muted); text-align: center;
+  }
+  .install-hint.show { display: flex; }
+  .hint-dismiss { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; margin-left: auto; }
+
+  @media (max-width: 660px) {
+    .layout { grid-template-columns: 1fr; }
+    .form-row-3 { grid-template-columns: 1fr 1fr; }
+    .btn-add { grid-column: 1/-1; }
+    .table-header, .expense-row { grid-template-columns: 68px 1fr 78px 26px; }
+    .th:nth-child(3), .cell-cat { display: none; }
+    .header-right { flex-direction: column; align-items: flex-end; gap: 8px; }
+    .month-display { min-width: 120px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Splash screen -->
+<div id="splash">
+  <div class="splash-logo">L</div>
+  <div class="splash-sub">Ledger</div>
+  <div class="splash-bar"></div>
+</div>
+
+<!-- Offline badge -->
+<div class="offline-badge" id="offlineBadge">&#9679; Offline</div>
+
+<div class="app">
+  <!-- Install hint (shown if not in standalone mode) -->
+  <div class="install-hint" id="installHint">
+    <span>&#8679; Tap Share &rarr; <strong>Add to Home Screen</strong> to install as an app</span>
+    <button class="hint-dismiss" onclick="dismissHint()">&#215;</button>
+  </div>
+
+  <header>
+    <div class="logo">Ledger</div>
+    <div class="header-right">
+      <div class="month-nav">
+        <button class="nav-btn" id="btnPrev" onclick="changeMonth(-1)">&#8249;</button>
+        <div class="month-display" id="monthDisplay"></div>
+        <button class="nav-btn" id="btnNext" onclick="changeMonth(1)">&#8250;</button>
+      </div>
+      <div class="month-total-wrap">
+        <div class="label" id="totalLabel">This Month</div>
+        <div class="amount" id="monthTotal">$0.00</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="past-banner" id="pastBanner">
+    <span>Viewing past month &mdash; read only</span>
+    <button class="btn-go-current" onclick="goToCurrentMonth()">Current month &rarr;</button>
+  </div>
+
+  <div class="layout">
+    <div>
+      <div class="add-form" id="addForm">
+        <div class="form-title">Add Expense</div>
+        <div class="form-row-3">
+          <input type="text" id="desc" placeholder="Description" autocomplete="off" />
+          <select id="cat">
+            <option value="Food &amp; Dining">Food &amp; Dining</option>
+            <option value="Transport">Transport</option>
+            <option value="Shopping">Shopping</option>
+            <option value="Bills &amp; Utilities">Bills &amp; Utilities</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Other">Other</option>
+          </select>
+          <input type="number" id="amount" placeholder="$0.00" min="0" step="0.01" inputmode="decimal" />
+        </div>
+        <div class="form-row">
+          <input type="date" id="date" />
+          <button class="btn-add" onclick="addExpense()">+ Add</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <div class="table-header">
+          <span class="th">Date</span>
+          <span class="th">Description</span>
+          <span class="th">Category</span>
+          <span class="th" style="text-align:right">Amount</span>
+          <span class="th"></span>
+        </div>
+        <div id="expenseList"></div>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="card">
+        <div class="card-title">By Category</div>
+        <div id="catBreakdown"></div>
+      </div>
+      <div class="card" id="statsCard">
+        <div class="card-title">Quick Stats</div>
+        <div class="stat-row"><span class="stat-key">Today</span><span id="statToday">$0.00</span></div>
+        <div class="stat-row"><span class="stat-key">This week</span><span id="statWeek">$0.00</span></div>
+        <div class="stat-row"><span class="stat-key">Avg/day</span><span id="statAvg">$0.00</span></div>
+        <div class="stat-row"><span class="stat-key">Transactions</span><span id="statCount">0</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Month History</div>
+        <div id="monthHistory"></div>
+      </div>
+      <button class="btn-export" onclick="exportCSV()">&#8595; Export CSV (this month)</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Service Worker (offline support) ───────────────────────────────────
+const SW_CODE = `
+const CACHE = 'ledger-v1';
+const FONTS = [
+  'https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Playfair+Display:wght@400;700&display=swap'
+];
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FONTS).catch(()=>{})));
+  self.skipWaiting();
+});
+self.addEventListener('activate', e => { e.waitUntil(self.clients.claim()); });
+self.addEventListener('fetch', e => {
+  e.respondWith(
+    caches.match(e.request).then(cached => {
+      if (cached) return cached;
+      return fetch(e.request).then(res => {
+        if (res && res.status === 200 && e.request.method === 'GET') {
+          const clone = res.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return res;
+      }).catch(() => cached || new Response('Offline', {status: 503}));
+    })
+  );
+});
+`;
+
+if ('serviceWorker' in navigator) {
+  const blob = new Blob([SW_CODE], {type: 'application/javascript'});
+  const swURL = URL.createObjectURL(blob);
+  navigator.serviceWorker.register(swURL).catch(() => {});
+}
+
+// ── Offline detection ───────────────────────────────────────────────────
+function updateOnlineStatus() {
+  document.getElementById('offlineBadge').classList.toggle('show', !navigator.onLine);
+}
+window.addEventListener('online', updateOnlineStatus);
+window.addEventListener('offline', updateOnlineStatus);
+
+// ── Install hint (hide if already in standalone mode) ──────────────────
+function isStandalone() {
+  return window.navigator.standalone === true ||
+    window.matchMedia('(display-mode: standalone)').matches;
+}
+function dismissHint() {
+  localStorage.setItem('ledger_hint_dismissed', '1');
+  document.getElementById('installHint').classList.remove('show');
+}
+if (!isStandalone() && !localStorage.getItem('ledger_hint_dismissed')) {
+  // Only show on mobile Safari
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent)) {
+    document.getElementById('installHint').classList.add('show');
+  }
+}
+
+// ── Splash screen ───────────────────────────────────────────────────────
+window.addEventListener('load', () => {
+  setTimeout(() => {
+    const s = document.getElementById('splash');
+    s.classList.add('hide');
+    setTimeout(() => s.remove(), 450);
+  }, 900);
+});
+
+// ── App logic ───────────────────────────────────────────────────────────
+const CAT_COLORS = {
+  'Food & Dining': '#7ac9a0', 'Transport': '#7ab4c9', 'Shopping': '#c97ab4',
+  'Bills & Utilities': '#c9a07a', 'Entertainment': '#a07ac9', 'Other': '#7a7060'
+};
+
+let expenses = JSON.parse(localStorage.getItem('ledger_expenses') || '[]');
+let viewMonth = currentMonthKey();
+
+function save() { localStorage.setItem('ledger_expenses', JSON.stringify(expenses)); }
+function fmt(n) { return '$' + Number(n).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+function currentMonthKey() { return new Date().toISOString().slice(0, 7); }
+function monthLabel(key) {
+  const [y, m] = key.split('-');
+  return new Date(+y, +m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+}
+function allMonths() {
+  const keys = new Set(expenses.map(e => e.date.slice(0, 7)));
+  keys.add(currentMonthKey());
+  return [...keys].sort().reverse();
+}
+
+function changeMonth(dir) {
+  const months = allMonths();
+  const idx = months.indexOf(viewMonth);
+  const newIdx = idx + (-dir);
+  if (newIdx >= 0 && newIdx < months.length) { viewMonth = months[newIdx]; render(); }
+}
+
+function goToCurrentMonth() { viewMonth = currentMonthKey(); render(); }
+
+function addExpense() {
+  const desc = document.getElementById('desc').value.trim();
+  const cat = document.getElementById('cat').value;
+  const amount = parseFloat(document.getElementById('amount').value);
+  const date = document.getElementById('date').value;
+  if (!desc || !amount || amount <= 0 || !date) {
+    document.getElementById(!desc ? 'desc' : amount <= 0 ? 'amount' : 'date').focus();
+    return;
+  }
+  expenses.unshift({ id: Date.now(), desc, cat, amount, date });
+  save();
+  viewMonth = currentMonthKey();
+  render();
+  document.getElementById('desc').value = '';
+  document.getElementById('amount').value = '';
+  document.getElementById('date').value = todayStr();
+  document.getElementById('desc').focus();
+}
+
+function deleteExpense(id) { expenses = expenses.filter(e => e.id !== id); save(); render(); }
+
+function render() {
+  const isCurrent = viewMonth === currentMonthKey();
+  const monthExp = expenses.filter(e => e.date.startsWith(viewMonth));
+  const months = allMonths();
+  const idx = months.indexOf(viewMonth);
+
+  document.getElementById('monthDisplay').textContent = monthLabel(viewMonth);
+  document.getElementById('monthDisplay').className = 'month-display ' + (isCurrent ? 'is-current' : 'is-past');
+  document.getElementById('btnPrev').disabled = idx >= months.length - 1;
+  document.getElementById('btnNext').disabled = isCurrent;
+  document.getElementById('totalLabel').textContent = isCurrent ? 'This Month' : monthLabel(viewMonth).split(' ')[0];
+  document.getElementById('pastBanner').classList.toggle('visible', !isCurrent);
+  document.getElementById('addForm').classList.toggle('hidden', !isCurrent);
+  document.getElementById('monthTotal').textContent = fmt(monthExp.reduce((s, e) => s + e.amount, 0));
+
+  const list = document.getElementById('expenseList');
+  const sorted = [...monthExp].sort((a, b) => b.date.localeCompare(a.date));
+  if (!sorted.length) {
+    list.innerHTML = '<div class="empty">No expenses for<br>' + monthLabel(viewMonth) + '</div>';
+  } else {
+    list.innerHTML = sorted.map(e => `
+      <div class="expense-row">
+        <span class="cell-date">${e.date.slice(5)}</span>
+        <span class="cell-desc">${e.desc}</span>
+        <span class="cell-cat"><span class="cat-dot" style="background:${CAT_COLORS[e.cat]||'#7a7060'}"></span>${e.cat}</span>
+        <span class="cell-amount">${fmt(e.amount)}</span>
+        ${isCurrent ? `<button class="btn-del" onclick="deleteExpense(${e.id})">&times;</button>` : '<span></span>'}
+      </div>`).join('');
+  }
+
+  const cats = {};
+  monthExp.forEach(e => { cats[e.cat] = (cats[e.cat]||0) + e.amount; });
+  const maxCat = Math.max(...Object.values(cats), 0.01);
+  const catEl = document.getElementById('catBreakdown');
+  if (!Object.keys(cats).length) {
+    catEl.innerHTML = '<div style="color:var(--muted);font-size:12px">No expenses</div>';
+  } else {
+    catEl.innerHTML = Object.entries(cats).sort((a,b)=>b[1]-a[1]).map(([cat,amt]) => `
+      <div class="cat-group">
+        <div class="cat-row">
+          <span class="cat-label"><span class="cat-dot" style="background:${CAT_COLORS[cat]||'#7a7060'}"></span>${cat}</span>
+          <span class="cat-amount">${fmt(amt)}</span>
+        </div>
+        <div class="bar-bg"><div class="bar-fill" style="width:${(amt/maxCat)*100}%;background:${CAT_COLORS[cat]||'#7a7060'}"></div></div>
+      </div>`).join('');
+  }
+
+  const statsCard = document.getElementById('statsCard');
+  if (isCurrent) {
+    statsCard.style.display = '';
+    const now = new Date(), today = todayStr();
+    const weekAgo = new Date(now - 7*86400000).toISOString().split('T')[0];
+    document.getElementById('statToday').textContent = fmt(expenses.filter(e=>e.date===today).reduce((s,e)=>s+e.amount,0));
+    document.getElementById('statWeek').textContent = fmt(expenses.filter(e=>e.date>=weekAgo).reduce((s,e)=>s+e.amount,0));
+    document.getElementById('statAvg').textContent = fmt(monthExp.reduce((s,e)=>s+e.amount,0)/now.getDate());
+    document.getElementById('statCount').textContent = monthExp.length;
+  } else { statsCard.style.display = 'none'; }
+
+  const histEl = document.getElementById('monthHistory');
+  const allM = allMonths();
+  if (allM.length === 1) {
+    histEl.innerHTML = '<div style="color:var(--muted);font-size:12px">Past months will appear here.</div>';
+  } else {
+    histEl.innerHTML = allM.map(key => {
+      const total = expenses.filter(e=>e.date.startsWith(key)).reduce((s,e)=>s+e.amount,0);
+      const lbl = key === currentMonthKey() ? 'This month' : monthLabel(key);
+      return `<div class="hist-row ${key===viewMonth?'active':''}" onclick="jumpToMonth('${key}')">
+        <span>${lbl}</span><span>${fmt(total)}</span></div>`;
+    }).join('');
+  }
+}
+
+function jumpToMonth(key) { viewMonth = key; render(); }
+
+function exportCSV() {
+  const monthExp = [...expenses.filter(e=>e.date.startsWith(viewMonth))].sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = [['Date','Description','Category','Amount']];
+  monthExp.forEach(e => rows.push([e.date, e.desc, e.cat, e.amount.toFixed(2)]));
+  const csv = rows.map(r=>r.map(c=>`"${c}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'expenses_' + viewMonth + '.csv';
+  a.click();
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && document.activeElement.closest && document.activeElement.closest('#addForm')) addExpense();
+});
+
+document.getElementById('date').value = todayStr();
+render();
+</script>
+</body>
+</html>
